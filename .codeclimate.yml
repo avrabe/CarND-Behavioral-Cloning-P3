@@ -1,0 +1,21 @@
+---
+engines:
+  markdownlint:
+    enabled: true
+  pep8:
+    enabled: true
+  duplication:
+    enabled: true
+    config:
+      languages:
+      - python
+  fixme:
+    enabled: true
+  radon:
+    enabled: true
+ratings:
+  paths:
+  - "**.md"
+  - "**.inc"
+  - "**.py"
+exclude_paths: []
