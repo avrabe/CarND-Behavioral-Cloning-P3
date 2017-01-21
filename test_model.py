@@ -18,3 +18,8 @@ def test_one_driving_logs_csv():
 def test_no_driving_logs_csv():
     with pytest.raises(ValueError):
         model.DrivingLogs(os.path.join("test_data", "empty"))
+
+
+def test_empty_driving_logs_csv():
+    with pytest.raises(Exception):
+        model._read_driving_log(os.path.join("test_data", "two"))
