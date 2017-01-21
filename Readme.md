@@ -1,5 +1,5 @@
 [![Code Climate](https://codeclimate.com/github/avrabe/CarND-Behavioral-Cloning-P3/badges/gpa.svg)](https://codeclimate.com/github/avrabe/CarND-Behavioral-Cloning-P3)
-
+[![Build Status](https://travis-ci.org/avrabe/CarND-Behavioral-Cloning-P3.svg?branch=master)](https://travis-ci.org/avrabe/CarND-Behavioral-Cloning-P3)
 # CarND-Behavioral-Cloning-P3
 
 _The README thoroughly discusses the approach
