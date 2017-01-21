@@ -1,2 +1,2 @@
-click
-attr
+click==6.7
+attr==0.1.0
