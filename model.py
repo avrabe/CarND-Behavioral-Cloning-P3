@@ -2,8 +2,12 @@ import os
 
 import attr
 import click
+import cv2
 import numpy as np
 import pandas as pd
+from keras.layers import Convolution2D
+from keras.layers import Dense, Activation, Flatten
+from keras.models import Sequential
 
 
 def _convert_image_filename(filename, path):
@@ -108,13 +112,48 @@ class DrivingLogs:
         return pd.concat([_read_driving_log(x) for x in self.driving_logs])
 
 
+def generate_arrays_from_file(path):
+    data = DrivingLogs(path).data_frame
+    batchSize = 1
+    while 1:
+        for filename, steering in zip(data['center'], data['steering']):
+            # create numpy arrays of input data
+            # and labels, from each line in the file
+            X = np.zeros((batchSize, 160, 320, 3))
+            Y = np.zeros((batchSize, 1))
+
+            img = cv2.imread(filename)
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+            # print(steering, filename, img.shape)
+            X[0] = img
+            Y[0] = steering
+
+            foo = X, Y
+            yield foo
+
+
 @click.command()
 @click.option('--driving_logs', default=".",
               help='The roo path containing the driving logs and the corresponding images',
               type=click.Path(exists=True))
 def cli(driving_logs):
-    click.echo(DrivingLogs(driving_logs).data_frame["center"])
-    click.echo(list(DrivingLogs(driving_logs).driving_logs))
+    model = Sequential()
+    model.add(Convolution2D(32, 3, 3, border_mode='same', input_shape=(160, 320, 3)))
+    model.add(Activation("relu"))
+    model.add(Flatten())
+    model.add(Dense(128))
+    model.add(Activation("relu"))
+    model.add(Dense(1))
+    model.add(Activation('softmax'))
+
+    model.compile(loss='hinge',
+                  optimizer='adam', metrics=['accuracy'])
+
+    history = model.fit_generator(generate_arrays_from_file(driving_logs),
+                                  samples_per_epoch=100, nb_epoch=10)
+
+    print("The validation accuracy is: %.3f" % history.history['val_acc'][-1])
 
 
 if __name__ == '__main__':
