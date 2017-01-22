@@ -48,7 +48,7 @@ mkdir -p ~/git
 cd ~/git
 git clone https://github.com/avrabe/CarND-Behavioral-Cloning-P3.git
 cd CarND-Behavioral-Cloning-P3
-~/miniconda3/bin/conda env create -f environment.yml
+~/miniconda3/bin/conda env create -f environment-gpu.yml
 ```
 
 And to activate the environment

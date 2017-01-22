@@ -5,10 +5,11 @@ import click
 import cv2
 import numpy as np
 import pandas as pd
-from keras.layers import Convolution2D
-from keras.layers import Dense, Activation, Flatten, Dropout, MaxPooling2D
+from keras.layers import Convolution2D, MaxPooling2D, Dropout
+from keras.layers import Dense, Activation, Flatten
 from keras.models import Sequential
 from sklearn.model_selection import train_test_split as tts
+from sklearn.utils import shuffle
 
 
 def _convert_image_filename(filename, path):
@@ -113,24 +114,39 @@ class DrivingLogs:
         return pd.concat([_read_driving_log(x) for x in self.driving_logs])
 
 
-def generate_arrays_from_file(x, y):
-    batchSize = 1
+def generate_arrays_from_file(x, y, batch_size, do_shuffle=False):
+    batch_count = 0
+    batch_size /= 10
     while 1:
+        batch_index = 0
+        if batch_index == 0:
+            X = []
+            Y = []
+        if do_shuffle:
+            x, y = shuffle(x, y)
         for filename, steering in zip(x, y):
             # create numpy arrays of input data
             # and labels, from each line in the file
-            X = np.zeros((batchSize, 160, 320, 3))
-            Y = np.zeros((batchSize, 1))
-
             img = cv2.imread(filename)
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            img = cv2.resize(img, (32, 32))
 
+            X.append(np.copy(img))
+            Y.append(steering)
             # print(steering, filename, img.shape)
-            X[0] = img
-            Y[0] = steering
-
-            foo = X, Y
-            yield foo
+            batch_index += 1
+            if batch_index == batch_size:
+                # print("BatchCount %d" % (batch_count))
+                batch_count += 1
+                # foo = X, Y
+                """
+                Below line I got from
+                https://groups.google.com/forum/#!topic/keras-users/of7puzB2H0g
+                """
+                foo = np.asarray(X), np.asarray(Y)
+                yield foo
+                batch_index = 0
+                X = []
+                Y = []
 
 
 @click.command()
@@ -143,7 +159,7 @@ def cli(driving_logs):
     X_train, X_val, y_train, y_val = tts(data['center'], data['steering'])
 
     model = Sequential()
-    model.add(Convolution2D(32, 3, 3, border_mode='same', input_shape=(160, 320, 3)))
+    model.add(Convolution2D(32, 3, 3, input_shape=(32, 32, 3)))
     model.add(Activation("relu"))
     model.add(MaxPooling2D(pool_size=(2, 2)))
     model.add(Activation("relu"))
@@ -162,17 +178,21 @@ def cli(driving_logs):
     model.add(Dense(400))
     model.add(Activation("relu"))
     model.add(Dense(1))
-    model.add(Activation('softmax'))
 
     model.compile(loss='mse',
-                  optimizer='adam')
+                  optimizer='adam',
+                  metrics=["accuracy"])
 
-    history = model.fit_generator(generate_arrays_from_file(X_train, y_train),
-                                  samples_per_epoch=300, nb_epoch=40,
-                                  validation_data=generate_arrays_from_file(X_val, y_val),
-                                  nb_val_samples=100)
+    samples_per_epoch = 4000
+    nb_val_samples = 1000
+    nb_epoch = 10
+    history = model.fit_generator(generate_arrays_from_file(X_train, y_train, samples_per_epoch, do_shuffle=True),
+                                  samples_per_epoch=samples_per_epoch, nb_epoch=nb_epoch,
+                                  validation_data=generate_arrays_from_file(X_val, y_val, nb_val_samples),
+                                  nb_val_samples=nb_val_samples)
 
     print("The validation accuracy is: %.3f" % history.history['val_acc'][-1])
+    print("The loss is: %.3f" % history.history['val_loss'][-1])
 
 
 if __name__ == '__main__':
