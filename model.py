@@ -6,8 +6,9 @@ import cv2
 import numpy as np
 import pandas as pd
 from keras.layers import Convolution2D
-from keras.layers import Dense, Activation, Flatten
+from keras.layers import Dense, Activation, Flatten, Dropout, MaxPooling2D
 from keras.models import Sequential
+from sklearn.model_selection import train_test_split as tts
 
 
 def _convert_image_filename(filename, path):
@@ -112,11 +113,10 @@ class DrivingLogs:
         return pd.concat([_read_driving_log(x) for x in self.driving_logs])
 
 
-def generate_arrays_from_file(path):
-    data = DrivingLogs(path).data_frame
+def generate_arrays_from_file(x, y):
     batchSize = 1
     while 1:
-        for filename, steering in zip(data['center'], data['steering']):
+        for filename, steering in zip(x, y):
             # create numpy arrays of input data
             # and labels, from each line in the file
             X = np.zeros((batchSize, 160, 320, 3))
@@ -138,20 +138,39 @@ def generate_arrays_from_file(path):
               help='The roo path containing the driving logs and the corresponding images',
               type=click.Path(exists=True))
 def cli(driving_logs):
+    data = DrivingLogs(driving_logs).data_frame
+    print(len(data))
+    X_train, X_val, y_train, y_val = tts(data['center'], data['steering'])
+
     model = Sequential()
     model.add(Convolution2D(32, 3, 3, border_mode='same', input_shape=(160, 320, 3)))
     model.add(Activation("relu"))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+    model.add(Activation("relu"))
+    model.add(Convolution2D(64, 2, 2))
+    model.add(Activation("relu"))
+    model.add(Convolution2D(64, 2, 2))
+    model.add(Activation("relu"))
+    model.add(Convolution2D(128, 2, 2))
+    model.add(Activation("relu"))
+    model.add(Convolution2D(128, 2, 2))
+    model.add(Activation("relu"))
+    model.add(Convolution2D(128, 2, 2))
+    model.add(Activation("relu"))
     model.add(Flatten())
-    model.add(Dense(128))
+    model.add(Dropout(0.5))
+    model.add(Dense(400))
     model.add(Activation("relu"))
     model.add(Dense(1))
     model.add(Activation('softmax'))
 
-    model.compile(loss='hinge',
-                  optimizer='adam', metrics=['accuracy'])
+    model.compile(loss='mse',
+                  optimizer='adam')
 
-    history = model.fit_generator(generate_arrays_from_file(driving_logs),
-                                  samples_per_epoch=100, nb_epoch=10)
+    history = model.fit_generator(generate_arrays_from_file(X_train, y_train),
+                                  samples_per_epoch=300, nb_epoch=40,
+                                  validation_data=generate_arrays_from_file(X_val, y_val),
+                                  nb_val_samples=100)
 
     print("The validation accuracy is: %.3f" % history.history['val_acc'][-1])
 
