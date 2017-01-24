@@ -1,4 +1,8 @@
 click==6.7
 attrs==15.2.0
 pandas
-opencv3
+opencv-python
+h5py
+eventlet
+tensorflow
+git+https://github.com/fchollet/keras.git

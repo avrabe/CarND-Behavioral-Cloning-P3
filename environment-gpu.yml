@@ -20,6 +20,7 @@ dependencies:
     - imageio
     - click
     - pytest
+    - graphviz
     - pip:
         - attrs
         - moviepy
