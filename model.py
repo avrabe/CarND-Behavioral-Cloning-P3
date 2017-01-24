@@ -1,3 +1,4 @@
+import json
 import os
 
 import attr
@@ -5,8 +6,8 @@ import click
 import cv2
 import numpy as np
 import pandas as pd
-from keras.layers import Convolution2D, MaxPooling2D, Dropout
-from keras.layers import Dense, Activation, Flatten
+from keras.layers import Convolution2D, Dropout
+from keras.layers import Dense, Flatten
 from keras.models import Sequential
 from sklearn.model_selection import train_test_split as tts
 from sklearn.utils import shuffle
@@ -116,7 +117,7 @@ class DrivingLogs:
 
 def generate_arrays_from_file(x, y, batch_size, do_shuffle=False):
     batch_count = 0
-    batch_size /= 10
+    # batch_size /= 10
     while 1:
         batch_index = 0
         if batch_index == 0:
@@ -128,7 +129,7 @@ def generate_arrays_from_file(x, y, batch_size, do_shuffle=False):
             # create numpy arrays of input data
             # and labels, from each line in the file
             img = cv2.imread(filename)
-            img = cv2.resize(img, (32, 32))
+            img = cv2.resize(img, (200, 66))
 
             X.append(np.copy(img))
             Y.append(steering)
@@ -159,40 +160,48 @@ def cli(driving_logs):
     X_train, X_val, y_train, y_val = tts(data['center'], data['steering'])
 
     model = Sequential()
-    model.add(Convolution2D(32, 3, 3, input_shape=(32, 32, 3)))
-    model.add(Activation("relu"))
-    model.add(MaxPooling2D(pool_size=(2, 2)))
-    model.add(Activation("relu"))
-    model.add(Convolution2D(64, 2, 2))
-    model.add(Activation("relu"))
-    model.add(Convolution2D(64, 2, 2))
-    model.add(Activation("relu"))
-    model.add(Convolution2D(128, 2, 2))
-    model.add(Activation("relu"))
-    model.add(Convolution2D(128, 2, 2))
-    model.add(Activation("relu"))
-    model.add(Convolution2D(128, 2, 2))
-    model.add(Activation("relu"))
+    model.add(
+        Convolution2D(24, 5, 5, border_mode='same', subsample=(2, 2), input_shape=(66, 200, 3), activation="relu"))
+    model.add(Convolution2D(36, 5, 5, border_mode='same', subsample=(2, 2), activation="relu"))
+    model.add(Convolution2D(48, 5, 5, border_mode='same', subsample=(2, 2), activation="relu"))
+    model.add(Convolution2D(64, 3, 3, border_mode='same', subsample=(2, 2), activation="relu"))
+    model.add(Convolution2D(64, 3, 3, border_mode='same', subsample=(2, 2), activation="relu"))
     model.add(Flatten())
     model.add(Dropout(0.5))
-    model.add(Dense(400))
-    model.add(Activation("relu"))
+    model.add(Dense(1164, activation="relu"))
+    model.add(Dense(100, activation="relu"))
+    model.add(Dense(50, activation="relu"))
+    model.add(Dense(10, activation="relu"))
     model.add(Dense(1))
 
     model.compile(loss='mse',
                   optimizer='adam',
-                  metrics=["accuracy"])
+                  )
 
-    samples_per_epoch = 4000
-    nb_val_samples = 1000
+    samples_per_epoch = 15000
+    nb_val_samples = 2000
     nb_epoch = 10
-    history = model.fit_generator(generate_arrays_from_file(X_train, y_train, samples_per_epoch, do_shuffle=True),
+    from keras.utils.visualize_util import model_to_dot
+    with open("foo.dot", 'w') as jfile:
+        jfile.write(model_to_dot(model, show_shapes=True, show_layer_names=True).to_string())
+    history = model.fit_generator(generate_arrays_from_file(X_train, y_train, 100, do_shuffle=True),
                                   samples_per_epoch=samples_per_epoch, nb_epoch=nb_epoch,
-                                  validation_data=generate_arrays_from_file(X_val, y_val, nb_val_samples),
+                                  validation_data=generate_arrays_from_file(X_val, y_val, 100),
                                   nb_val_samples=nb_val_samples)
 
-    print("The validation accuracy is: %.3f" % history.history['val_acc'][-1])
-    print("The loss is: %.3f" % history.history['val_loss'][-1])
+    # print("The cosine_proximity accuracy is: %.3f" % history.history['val_cosine_proximity'][-1])
+    # print("The loss is: %.3f" % history.history['val_loss'][-1])
+    with open("foo.json", 'w') as jfile:
+        json.dump(model.to_json(), jfile)
+    model.save_weights("foo.h5", overwrite=True)
+
+    filename = "C:\\Users\\Ralf\\Downloads\\simulator-windows-64\\left_route\\IMG\\center_2017_01_19_19_25_49_380.jpg"
+    img = cv2.imread(filename)
+    img = cv2.resize(img, (200, 66))
+
+    X = np.asarray([np.copy(img)])
+    steering_angle = float(model.predict(X, batch_size=1, verbose=1))
+    print(filename, "-0.307052", steering_angle)
 
 
 if __name__ == '__main__':
