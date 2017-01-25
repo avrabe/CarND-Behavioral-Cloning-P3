@@ -194,8 +194,7 @@ def cli(driving_logs):
         # print("The loss is: %.3f" % history.history['val_loss'][-1])
         with open(i + "_foo.json", 'w') as jfile:
             json.dump(model.to_json(), jfile)
-        model.save_weights(i + _
-        "foo.h5", overwrite = True)
+        model.save_weights(i + "_foo.h5", overwrite=True)
 
         filename = "C:\\Users\\Ralf\\Downloads\\simulator-windows-64\\left_route\\IMG\\center_2017_01_19_19_25_49_380.jpg"
         img = cv2.imread(filename)
