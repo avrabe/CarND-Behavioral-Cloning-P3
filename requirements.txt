@@ -7,3 +7,4 @@ eventlet
 tensorflow
 git+https://github.com/fchollet/keras.git
 scikit-learn
+pydot_ng
