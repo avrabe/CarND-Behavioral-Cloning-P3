@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 from itertools import product
 
 import attr
@@ -8,7 +9,7 @@ import cv2
 import numpy as np
 import pandas as pd
 from keras.layers import Convolution2D, Dropout
-from keras.layers import Dense, Flatten
+from keras.layers import Dense, Flatten, Lambda, ELU
 from keras.models import Sequential
 from keras.utils.visualize_util import model_to_dot
 from sklearn.model_selection import train_test_split as tts
@@ -119,8 +120,8 @@ class DrivingLogs:
     @property
     def train_test_split(self):
         images = self.data_frame['center'].append(self.data_frame['left']).append(self.data_frame['right'])
-        steerings = self.data_frame['steering'].append(self.data_frame['steering']).append(self.data_frame['steering'])
-        return tts(images, steerings)
+        steering = self.data_frame['steering'].append(self.data_frame['steering']).append(self.data_frame['steering'])
+        return tts(images, steering)
 
 
 def generate_arrays_from_file(x, y, batch_size, do_shuffle=False):
@@ -160,66 +161,132 @@ def generate_arrays_from_file(x, y, batch_size, do_shuffle=False):
                 Y = []
 
 
-def get_filename(optimize, objective, epoch, suffix=".json"):
-    return "%s_%s_e%02d%s" % (optimize, objective, epoch, suffix)
+@attr.s
+class Filename:
+    model = attr.ib(default="unknown")
+    optimizer = attr.ib(default="unknown")
+    objective = attr.ib(default="unknown")
+    epoch = attr.ib(default=0)
+    samples_per_epoch = attr.ib(default=0)
+    batch_size = attr.ib(default=0)
+    validate = attr.ib(default=False)
+
+    def get_filename(self, suffix=".json"):
+        return "%s_%s_%s_e%02d_s%06d_b%04d_v%s%s" % (self.model, self.optimizer,
+                                                     self.objective, self.epoch, self.samples_per_epoch,
+                                                     self.batch_size, self.validate, suffix)
+
+
+def commaai():
+    """
+    Provide the commaai model described in
+    https://github.com/commaai/research/blob/master/train_steering_model.py
+    The input sizes have been adjusted.
+    :return A keras model:
+    """
+    ch, row, col = 3, 66, 200  # camera format
+
+    model = Sequential()
+    model.add(Lambda(lambda x: x / 127.5 - 1.,
+                     input_shape=(row, col, ch),
+                     output_shape=(row, col, ch)))
+    model.add(Convolution2D(16, 8, 8, subsample=(4, 4), border_mode="same"))
+    model.add(ELU())
+    model.add(Convolution2D(32, 5, 5, subsample=(2, 2), border_mode="same"))
+    model.add(ELU())
+    model.add(Convolution2D(64, 5, 5, subsample=(2, 2), border_mode="same"))
+    model.add(Flatten())
+    model.add(Dropout(.2))
+    model.add(ELU())
+    model.add(Dense(512))
+    model.add(Dropout(.5))
+    model.add(ELU())
+    model.add(Dense(1))
+    return model
+
+
+def nvidia():
+    model = Sequential()
+    model.add(
+        Convolution2D(24, 5, 5, border_mode='same', subsample=(2, 2), input_shape=(66, 200, 3), activation="relu"))
+    model.add(Convolution2D(36, 5, 5, border_mode='same', subsample=(2, 2), activation="relu"))
+    model.add(Convolution2D(48, 5, 5, border_mode='same', subsample=(2, 2), activation="relu"))
+    model.add(Convolution2D(64, 3, 3, border_mode='same', subsample=(2, 2), activation="relu"))
+    model.add(Convolution2D(64, 3, 3, border_mode='same', subsample=(2, 2), activation="relu"))
+    model.add(Flatten())
+    model.add(Dropout(0.2))
+    model.add(Dense(1164, activation="relu"))
+    model.add(Dropout(0.5))
+    model.add(Dense(100, activation="relu"))
+    model.add(Dense(50, activation="relu"))
+    model.add(Dense(10, activation="relu"))
+    model.add(Dense(1))
+    return model
 
 
 @click.command()
-@click.option('--driving_logs', default=".",
-              help='The roo path containing the driving logs and the corresponding images',
+@click.option('--models', default=["nvidia"], multiple=True,
+              type=click.Choice(["nvidia", "commaai"]),
+              help='Select the model.')
+@click.option('--optimizers', default=["adam"], multiple=True,
+              type=click.Choice(["sgd", "rmsprop", "adagrad", "adadelta", "adam", "adamax", "nadam"]),
+              help='Select the optimizer.')
+@click.option('--objectives', default=["mse"], multiple=True,
+              type=click.Choice(["mse", "mae", "mape", "msle", "squared_hinge", "hinge"]),
+              help='Select the objective')
+@click.option('-e', '--epochs', default=[1], multiple=True, type=int,
+              help='How many epochs should be trained.')
+@click.option('--samples_per_epoch', default=15000, type=int,
+              help='How many samples per epoch.')
+@click.option('--batch_size', default=64, type=int,
+              help='Whats the batch size.')
+@click.option('--validate/--no-validate', default=True)
+@click.option('-l', '--driving_logs', default=".",
+              help='The root path containing the driving logs and the corresponding images',
               type=click.Path(exists=True))
-def cli(driving_logs):
+def cli(models, optimizers, objectives, epochs, samples_per_epoch, batch_size, validate, driving_logs):
     X_train, X_val, y_train, y_val = DrivingLogs(driving_logs).train_test_split
     print(len(X_train), len(X_val))
 
-    optimizers = ["sgd", "rmsprop", "adagrad", "adadelta", "adam", "adamax", "nadam"]
-    objectives = ["mse", "mae", "mape", "msle", "squared_hinge", "hinge"]
-    epochs = range(1, 20, 4)
-
-    for optimizer, objective, nb_epoch in product(optimizers, objectives, epochs):
-        print("===== %s ===== %s ===== %02d =====" % (optimizer, objective, nb_epoch))
-        model = Sequential()
-        model.add(
-            Convolution2D(24, 5, 5, border_mode='same', subsample=(2, 2), input_shape=(66, 200, 3), activation="relu"))
-        model.add(Convolution2D(36, 5, 5, border_mode='same', subsample=(2, 2), activation="relu"))
-        model.add(Convolution2D(48, 5, 5, border_mode='same', subsample=(2, 2), activation="relu"))
-        model.add(Convolution2D(64, 3, 3, border_mode='same', subsample=(2, 2), activation="relu"))
-        model.add(Convolution2D(64, 3, 3, border_mode='same', subsample=(2, 2), activation="relu"))
-        model.add(Flatten())
-        model.add(Dropout(0.5))
-        model.add(Dense(1164, activation="relu"))
-        model.add(Dense(100, activation="relu"))
-        model.add(Dense(50, activation="relu"))
-        model.add(Dense(10, activation="relu"))
-        model.add(Dense(1))
+    for m, optimizer, objective, nb_epoch in product(models, optimizers, objectives, epochs):
+        print("=== %s ===== %s ===== %s ===== %02d =====" % (m, optimizer, objective, nb_epoch))
+        my_filename = Filename(model=m, optimizer=optimizer, objective=objective, epoch=nb_epoch,
+                               samples_per_epoch=samples_per_epoch, batch_size=batch_size,
+                               validate=validate)
+        this_module = sys.modules[__name__]
+        getattr(this_module, m)
+        model = getattr(this_module, m)()
 
         model.compile(loss=objective,
                       optimizer=optimizer,
                       metrics=["mean_squared_error"])
 
-        samples_per_epoch = 15000
         nb_val_samples = 2000
 
-        with open(get_filename(optimizer, objective, nb_epoch, suffix=".dot"), 'w') as jfile:
+        with open(my_filename.get_filename(suffix=".dot"), 'w') as jfile:
             jfile.write(model_to_dot(model, show_shapes=True, show_layer_names=True).to_string())
-        history = model.fit_generator(generate_arrays_from_file(X_train, y_train, 100, do_shuffle=True),
-                                      samples_per_epoch=samples_per_epoch, nb_epoch=nb_epoch,
-                                      validation_data=generate_arrays_from_file(X_val, y_val, 100),
-                                      nb_val_samples=nb_val_samples)
+        if validate:
+            history = model.fit_generator(generate_arrays_from_file(X_train, y_train, batch_size, do_shuffle=True),
+                                          samples_per_epoch=samples_per_epoch, nb_epoch=nb_epoch,
+                                          validation_data=generate_arrays_from_file(X_val, y_val, batch_size),
+                                          nb_val_samples=nb_val_samples)
+            print("The val_mean_squared_error is: %.3f" % history.history['val_mean_squared_error'][-1])
+            print("The loss is: %.3f" % history.history['val_loss'][-1])
+        else:
+            model.fit_generator(generate_arrays_from_file(X_train, y_train, batch_size, do_shuffle=True),
+                                samples_per_epoch=samples_per_epoch, nb_epoch=nb_epoch)
 
-        print("The cosine_proximity accuracy is: %.3f" % history.history['val_mean_squared_error'][-1])
-        print("The loss is: %.3f" % history.history['val_loss'][-1])
-        with open(get_filename(optimizer, objective, nb_epoch), 'w') as jfile:
+        with open(my_filename.get_filename(), 'w') as jfile:
             json.dump(model.to_json(), jfile)
-        model.save_weights(get_filename(optimizer, objective, nb_epoch, suffix=".h5"), overwrite=True)
+        model.save_weights(my_filename.get_filename(suffix=".h5"), overwrite=True)
 
-        filename = "C:\\Users\\Ralf\\Downloads\\simulator-windows-64\\left_route\\IMG\\center_2017_01_19_19_25_49_380.jpg"
-        img = cv2.imread(filename)
+        myfile = "C:\\Users\\Ralf\\Downloads\\simulator-windows-64\\left_route\\IMG\\center_2017_01_19_19_25_49_380.jpg"
+        img = cv2.imread(myfile)
         img = cv2.resize(img, (200, 66))
 
         X = np.asarray([np.copy(img)])
         steering_angle = float(model.predict(X, batch_size=1, verbose=1))
-        print(optimizer, objective, nb_epoch, filename, "-0.307052", steering_angle)
+        print(optimizer, objective, nb_epoch, Filename, "-0.307052", steering_angle)
 
 
 if __name__ == '__main__':
