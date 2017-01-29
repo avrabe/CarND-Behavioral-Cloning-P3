@@ -12,6 +12,7 @@ from keras.layers import Convolution2D, Dropout
 from keras.layers import Dense, Flatten, Lambda, ELU
 from keras.models import Sequential
 from keras.utils.visualize_util import model_to_dot
+from pandas.tools.plotting import bootstrap_plot
 from sklearn.model_selection import train_test_split as tts
 from sklearn.utils import shuffle
 
@@ -23,16 +24,18 @@ def _convert_image_filename(filename, path):
     look like .*IMG<os.seperator>.*. As of this everything before the IMG
     will be removed and the original os.seperator estimated from the first
     character after IMG.
-    :param filename: The original image path
+    :param filename: The original image path as string
     :param path: The new path the pictures are located
     :return: The new absolute filename
     """
-    result = filename[filename.find("IMG"):]
-    orig_os_path_set = result[3]
-    result = result.replace(orig_os_path_set, os.path.sep)
-    result = os.path.join(path, result)
-    result = os.path.abspath(result)
-    return result
+    if isinstance(filename, str):
+        result = filename[filename.find("IMG"):]
+        orig_os_path_set = result[3]
+        result = result.replace(orig_os_path_set, os.path.sep)
+        result = os.path.join(path, result)
+        result = os.path.abspath(result)
+        return result
+    return "unknown"
 
 
 def _read_driving_log(filename):
@@ -59,6 +62,7 @@ def _read_driving_log(filename):
                              "steering": np.float64, "throttle": np.float64,
                              "break": np.float64, "speed": np.float64},
                       decimal=".", skiprows=1)
+    # for index in ["center", "left", "right"]:
     for index in ["center", "left", "right"]:
         for i in csv.index:
             name = csv.ix[i, index]
@@ -119,8 +123,18 @@ class DrivingLogs:
 
     @property
     def train_test_split(self):
-        images = self.data_frame['center'].append(self.data_frame['left']).append(self.data_frame['right'])
-        steering = self.data_frame['steering'].append(self.data_frame['steering']).append(self.data_frame['steering'])
+        images = self.data_frame['center'].append(
+            self.data_frame.query('steering>0 and left != "unknown"')['left']).append(
+            self.data_frame.query('steering<0 and right != "unknown"')['right'])
+        steering = self.data_frame['steering'].append(
+            self.data_frame.query('steering>0 and left != "unknown"')['steering']).append(
+            self.data_frame.query('steering<0 and right != "unknown"')['steering'])
+        data = pd.Series(steering)
+        fig = bootstrap_plot(data, size=50, samples=len(steering), color='grey')
+        fig.savefig('distribution.png')  # save the figure to file
+
+        # images = self.data_frame['center']
+        # steering = self.data_frame['steering']
         return tts(images, steering)
 
 
@@ -142,6 +156,8 @@ def generate_arrays_from_file(x, y, batch_size, do_shuffle=False):
                 print("Skip unreadable %s" % filename)
                 break
             img = cv2.resize(img, (200, 66))
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
             X.append(np.copy(img))
             Y.append(steering)
             # print(steering, filename, img.shape)
@@ -162,7 +178,7 @@ def generate_arrays_from_file(x, y, batch_size, do_shuffle=False):
 
 
 @attr.s
-class Filename:
+class ModelOptions:
     model = attr.ib(default="unknown")
     optimizer = attr.ib(default="unknown")
     objective = attr.ib(default="unknown")
@@ -170,11 +186,13 @@ class Filename:
     samples_per_epoch = attr.ib(default=0)
     batch_size = attr.ib(default=0)
     validate = attr.ib(default=False)
+    validation_samples_per_epoch = attr.ib(default=0)
 
     def get_filename(self, suffix=".json"):
-        return "%s_%s_%s_e%02d_s%06d_b%04d_v%s%s" % (self.model, self.optimizer,
-                                                     self.objective, self.epoch, self.samples_per_epoch,
-                                                     self.batch_size, self.validate, suffix)
+        return "%s_%s_%s_e%02d_s%06d_b%04d_v%s_vs%04d%s" % (self.model, self.optimizer,
+                                                            self.objective, self.epoch, self.samples_per_epoch,
+                                                            self.batch_size, self.validate,
+                                                            self.validation_samples_per_epoch, suffix)
 
 
 def commaai():
@@ -214,13 +232,42 @@ def nvidia():
     model.add(Convolution2D(64, 3, 3, border_mode='same', subsample=(2, 2), activation="relu"))
     model.add(Convolution2D(64, 3, 3, border_mode='same', subsample=(2, 2), activation="relu"))
     model.add(Flatten())
-    model.add(Dropout(0.2))
-    model.add(Dense(1164, activation="relu"))
     model.add(Dropout(0.5))
+    model.add(Dense(1164, activation="relu"))
     model.add(Dense(100, activation="relu"))
     model.add(Dense(50, activation="relu"))
     model.add(Dense(10, activation="relu"))
     model.add(Dense(1))
+    return model
+
+
+def train_model(X_train, X_val, y_train, y_val, model_options):
+    m = model_options
+    print("===== Train model %s =======" % (m.get_filename()))
+    this_module = sys.modules[__name__]
+    getattr(this_module, m.model)
+    model = getattr(this_module, m.model)()
+
+    model.compile(loss=m.objective,
+                  optimizer=m.optimizer,
+                  metrics=["mean_squared_error"])
+
+    with open(model_options.get_filename(suffix=".dot"), 'w') as jfile:
+        jfile.write(model_to_dot(model, show_shapes=True, show_layer_names=True).to_string())
+    if m.validate:
+        history = model.fit_generator(generate_arrays_from_file(X_train, y_train, m.batch_size, do_shuffle=True),
+                                      samples_per_epoch=m.samples_per_epoch, nb_epoch=m.epoch,
+                                      validation_data=generate_arrays_from_file(X_val, y_val, m.batch_size),
+                                      nb_val_samples=m.validation_samples_per_epoch)
+        print("The val_mean_squared_error is: %.3f" % history.history['val_mean_squared_error'][-1])
+        print("The loss is: %.3f" % history.history['val_loss'][-1])
+    else:
+        model.fit_generator(generate_arrays_from_file(X_train, y_train, m.batch_size, do_shuffle=True),
+                            samples_per_epoch=m.samples_per_epoch, nb_epoch=m.epoch)
+
+    with open(model_options.get_filename(), 'w') as jfile:
+        json.dump(model.to_json(), jfile)
+    model.save_weights(model_options.get_filename(suffix=".h5"), overwrite=True)
     return model
 
 
@@ -237,56 +284,42 @@ def nvidia():
 @click.option('-e', '--epochs', default=[1], multiple=True, type=int,
               help='How many epochs should be trained.')
 @click.option('--samples_per_epoch', default=15000, type=int,
-              help='How many samples per epoch.')
+              help='How many samples per epoch. -1 means all found.')
+@click.option('--validation_samples_per_epoch', default=2000, type=int,
+              help='How many validation samples per epoch. -1 means all found.')
 @click.option('--batch_size', default=64, type=int,
               help='Whats the batch size.')
 @click.option('--validate/--no-validate', default=True)
 @click.option('-l', '--driving_logs', default=".",
               help='The root path containing the driving logs and the corresponding images',
               type=click.Path(exists=True))
-def cli(models, optimizers, objectives, epochs, samples_per_epoch, batch_size, validate, driving_logs):
+def cli(models, optimizers, objectives, epochs, samples_per_epoch, validation_samples_per_epoch,
+        batch_size, validate, driving_logs):
     X_train, X_val, y_train, y_val = DrivingLogs(driving_logs).train_test_split
     print(len(X_train), len(X_val))
+    if validation_samples_per_epoch == -1:
+        validation_samples_per_epoch = len(X_val)
+    if samples_per_epoch == -1:
+        samples_per_epoch = len(X_train)
 
     for m, optimizer, objective, nb_epoch in product(models, optimizers, objectives, epochs):
-        print("=== %s ===== %s ===== %s ===== %02d =====" % (m, optimizer, objective, nb_epoch))
-        my_filename = Filename(model=m, optimizer=optimizer, objective=objective, epoch=nb_epoch,
-                               samples_per_epoch=samples_per_epoch, batch_size=batch_size,
-                               validate=validate)
-        this_module = sys.modules[__name__]
-        getattr(this_module, m)
-        model = getattr(this_module, m)()
+        model_options = ModelOptions(model=m, optimizer=optimizer, objective=objective, epoch=nb_epoch,
+                                     samples_per_epoch=samples_per_epoch, batch_size=batch_size,
+                                     validate=validate, validation_samples_per_epoch=validation_samples_per_epoch)
+        model = train_model(X_train, X_val, y_train, y_val, model_options)
 
-        model.compile(loss=objective,
-                      optimizer=optimizer,
-                      metrics=["mean_squared_error"])
+        files = ["center_2017_01_19_19_25_49_380.jpg",
+                 "center_2016_12_01_13_32_47_293.jpg",
+                 "center_2016_12_01_13_32_55_179.jpg"]
+        values = ["-0.307052", "0.38709", "0"]
+        for f, v in zip(files, values):
+            img = cv2.imread(os.path.join("test_data", "test", f))
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            img = cv2.resize(img, (200, 66))
 
-        nb_val_samples = 2000
-
-        with open(my_filename.get_filename(suffix=".dot"), 'w') as jfile:
-            jfile.write(model_to_dot(model, show_shapes=True, show_layer_names=True).to_string())
-        if validate:
-            history = model.fit_generator(generate_arrays_from_file(X_train, y_train, batch_size, do_shuffle=True),
-                                          samples_per_epoch=samples_per_epoch, nb_epoch=nb_epoch,
-                                          validation_data=generate_arrays_from_file(X_val, y_val, batch_size),
-                                          nb_val_samples=nb_val_samples)
-            print("The val_mean_squared_error is: %.3f" % history.history['val_mean_squared_error'][-1])
-            print("The loss is: %.3f" % history.history['val_loss'][-1])
-        else:
-            model.fit_generator(generate_arrays_from_file(X_train, y_train, batch_size, do_shuffle=True),
-                                samples_per_epoch=samples_per_epoch, nb_epoch=nb_epoch)
-
-        with open(my_filename.get_filename(), 'w') as jfile:
-            json.dump(model.to_json(), jfile)
-        model.save_weights(my_filename.get_filename(suffix=".h5"), overwrite=True)
-
-        myfile = "C:\\Users\\Ralf\\Downloads\\simulator-windows-64\\left_route\\IMG\\center_2017_01_19_19_25_49_380.jpg"
-        img = cv2.imread(myfile)
-        img = cv2.resize(img, (200, 66))
-
-        X = np.asarray([np.copy(img)])
-        steering_angle = float(model.predict(X, batch_size=1, verbose=1))
-        print(optimizer, objective, nb_epoch, Filename, "-0.307052", steering_angle)
+            X = np.asarray([np.copy(img)])
+            steering_angle = float(model.predict(X, batch_size=1, verbose=1))
+            print(f, v, steering_angle)
 
 
 if __name__ == '__main__':
