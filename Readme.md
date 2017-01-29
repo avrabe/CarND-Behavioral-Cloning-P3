@@ -6,6 +6,7 @@ _The README thoroughly discusses the approach
 taken for deriving and designing a model architecture
 fit for solving the given problem._
 
+[![Distribution](distribution.png)](distribution.png)[![Distribution](distribution-filtered.png)](distribution-filtered.png)
 
 _The README provides sufficient details of the
 characteristics and qualities of the architecture,

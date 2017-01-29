@@ -118,30 +118,37 @@ class DrivingLogs:
     @property
     def data_frame(self):
         """
-
-        :return: Return a panda Data Frame with all the
+        Provide all driving logs as one panda DataFrame
+        :return: Return a panda DataFrame with all the
         """
         return pd.concat([_read_driving_log(x) for x in self.driving_logs])
 
     @property
     def train_test_split(self):
-        images = self.data_frame['center'].append(
-            self.data_frame.query('steering>0 and left != "unknown"')['left']).append(
-            self.data_frame.query('steering<0 and right != "unknown"')['right'])
-        steering = self.data_frame['steering'].append(
-            self.data_frame.query('steering>0 and left != "unknown"')['steering']).append(
-            self.data_frame.query('steering<0 and right != "unknown"')['steering'])
+        filter_left = 'steering>0 and left != "unknown"'
+        filter_right = 'steering<0 and right != "unknown"'
+        left_right_adjustment = 0.05
+        left_images = self.data_frame.query(filter_left)['left']
+        right_images = self.data_frame.query(filter_right)['right']
+        images = self.data_frame['center'].append(left_images.append(right_images))
+        left_steering = self.data_frame.query(filter_left)['steering'] + left_right_adjustment
+        right_steering = self.data_frame.query(filter_right)['steering'] - left_right_adjustment
+        steering = self.data_frame['steering'].append(left_steering.append(right_steering))
         data = pd.Series(steering)
-        fig = bootstrap_plot(data, size=50, samples=len(steering), color='grey')
+        fig = bootstrap_plot(data, size=100, samples=len(steering), color='grey')
         fig.savefig('distribution.png')  # save the figure to file
-        # result = pd.concat([images, steering], axis=1)
-        # r1 = result.query('steering>=-0.07')
-        # r2 = result.query('steering<-0.07').sample(frac=0.4)  #
-        # result = pd.concat([r1, r2])
+
+        result = pd.concat([images, steering], axis=1)
+        r1 = result.query('steering<0 or steering>0')
+        r2 = result.query('steering==0').sample(frac=0.4)  #
+        result = pd.concat([r1, r2])
         #
-        # data = pd.Series(result['steering'])
-        # fig = bootstrap_plot(data, size=50, samples=len(result['steering']), color='grey')
-        # fig.savefig('distribution-filtered.png')  # save the figure to file
+        data = pd.Series(result['steering'])
+        fig = bootstrap_plot(data, size=100, samples=len(result['steering']), color='grey')
+        fig.savefig('distribution-filtered.png')  # save the figure to file
+
+        images = result[0]
+        steering = result['steering']
         return tts(images, steering)
 
 
@@ -208,6 +215,7 @@ class ModelOptions:
             return Adam(lr=0.0001)
         else:
             return self.optimizer
+
 
 def commaai():
     """
@@ -276,11 +284,11 @@ def train_model(X_train, X_val, y_train, y_val, model_options):
     with open(model_options.get_filename(suffix=".dot"), 'w') as jfile:
         jfile.write(model_to_dot(model, show_shapes=True, show_layer_names=True).to_string())
     if m.validate:
-        history = model.fit_generator(generate_arrays_from_file(X_train, y_train, m.batch_size, do_shuffle=True),
-                                      samples_per_epoch=m.samples_per_epoch, nb_epoch=m.epoch,
-                                      validation_data=generate_arrays_from_file(X_val, y_val, m.batch_size),
-                                      nb_val_samples=m.validation_samples_per_epoch,
-                                      callbacks=my_callback)
+        model.fit_generator(generate_arrays_from_file(X_train, y_train, m.batch_size, do_shuffle=True),
+                            samples_per_epoch=m.samples_per_epoch, nb_epoch=m.epoch,
+                            validation_data=generate_arrays_from_file(X_val, y_val, m.batch_size),
+                            nb_val_samples=m.validation_samples_per_epoch,
+                            callbacks=my_callback)
     else:
         model.fit_generator(generate_arrays_from_file(X_train, y_train, m.batch_size, do_shuffle=True),
                             samples_per_epoch=m.samples_per_epoch, nb_epoch=m.epoch,
@@ -329,18 +337,22 @@ def cli(models, optimizers, objectives, epochs, samples_per_epoch, validation_sa
                                      validate=validate, validation_samples_per_epoch=validation_samples_per_epoch)
         model = train_model(X_train, X_val, y_train, y_val, model_options)
 
-        files = ["center_2017_01_19_19_25_49_380.jpg",
-                 "center_2016_12_01_13_32_47_293.jpg",
-                 "center_2016_12_01_13_32_55_179.jpg"]
-        values = ["-0.307052", "0.38709", "0"]
-        for f, v in zip(files, values):
-            img = cv2.imread(os.path.join("test_data", "test", f))
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            img = cv2.resize(img, (200, 66))
+        test_model(model)
 
-            X = np.asarray([np.copy(img)])
-            steering_angle = float(model.predict(X, batch_size=1, verbose=1))
-            print(f, v, steering_angle)
+
+def test_model(model):
+    files = ["center_2017_01_19_19_25_49_380.jpg",
+             "center_2016_12_01_13_32_47_293.jpg",
+             "center_2016_12_01_13_32_55_179.jpg"]
+    values = ["-0.307052", "0.38709", "0"]
+    for f, v in zip(files, values):
+        img = cv2.imread(os.path.join("test_data", "test", f))
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        img = cv2.resize(img, (200, 66))
+
+        X = np.asarray([np.copy(img)])
+        steering_angle = float(model.predict(X, batch_size=1, verbose=1))
+        print(f, v, steering_angle)
 
 
 if __name__ == '__main__':
