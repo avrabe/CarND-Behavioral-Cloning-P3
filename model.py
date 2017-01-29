@@ -8,9 +8,11 @@ import click
 import cv2
 import numpy as np
 import pandas as pd
-from keras.layers import Convolution2D, Dropout
+from keras.callbacks import TensorBoard
+from keras.layers import Convolution2D, Dropout, PReLU
 from keras.layers import Dense, Flatten, Lambda, ELU
 from keras.models import Sequential
+from keras.optimizers import Adam
 from keras.utils.visualize_util import model_to_dot
 from pandas.tools.plotting import bootstrap_plot
 from sklearn.model_selection import train_test_split as tts
@@ -132,9 +134,14 @@ class DrivingLogs:
         data = pd.Series(steering)
         fig = bootstrap_plot(data, size=50, samples=len(steering), color='grey')
         fig.savefig('distribution.png')  # save the figure to file
-
-        # images = self.data_frame['center']
-        # steering = self.data_frame['steering']
+        # result = pd.concat([images, steering], axis=1)
+        # r1 = result.query('steering>=-0.07')
+        # r2 = result.query('steering<-0.07').sample(frac=0.4)  #
+        # result = pd.concat([r1, r2])
+        #
+        # data = pd.Series(result['steering'])
+        # fig = bootstrap_plot(data, size=50, samples=len(result['steering']), color='grey')
+        # fig.savefig('distribution-filtered.png')  # save the figure to file
         return tts(images, steering)
 
 
@@ -148,7 +155,7 @@ def generate_arrays_from_file(x, y, batch_size, do_shuffle=False):
             Y = []
         if do_shuffle:
             x, y = shuffle(x, y)
-        for filename, steering in zip(x, y):
+        for (filename, steering), flip in product(zip(x, y), [True, False]):
             # create numpy arrays of input data
             # and labels, from each line in the file
             img = cv2.imread(filename)
@@ -157,7 +164,9 @@ def generate_arrays_from_file(x, y, batch_size, do_shuffle=False):
                 break
             img = cv2.resize(img, (200, 66))
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
+            if flip:
+                img = cv2.flip(img, 1)
+                steering *= -1
             X.append(np.copy(img))
             Y.append(steering)
             # print(steering, filename, img.shape)
@@ -194,6 +203,11 @@ class ModelOptions:
                                                             self.batch_size, self.validate,
                                                             self.validation_samples_per_epoch, suffix)
 
+    def get_optimizer(self):
+        if self.optimizer == "adam":
+            return Adam(lr=0.0001)
+        else:
+            return self.optimizer
 
 def commaai():
     """
@@ -225,18 +239,23 @@ def commaai():
 
 def nvidia():
     model = Sequential()
-    model.add(
-        Convolution2D(24, 5, 5, border_mode='same', subsample=(2, 2), input_shape=(66, 200, 3), activation="relu"))
+    model.add(Lambda(lambda x: x / 255 - 0.5, input_shape=(66, 200, 3)))
+    model.add(Convolution2D(24, 5, 5, border_mode='same', subsample=(2, 2), activation="relu"))
     model.add(Convolution2D(36, 5, 5, border_mode='same', subsample=(2, 2), activation="relu"))
     model.add(Convolution2D(48, 5, 5, border_mode='same', subsample=(2, 2), activation="relu"))
     model.add(Convolution2D(64, 3, 3, border_mode='same', subsample=(2, 2), activation="relu"))
     model.add(Convolution2D(64, 3, 3, border_mode='same', subsample=(2, 2), activation="relu"))
     model.add(Flatten())
+    model.add(Dropout(0.8))
+    model.add(Dense(1164))
+    model.add(PReLU())
     model.add(Dropout(0.5))
-    model.add(Dense(1164, activation="relu"))
-    model.add(Dense(100, activation="relu"))
-    model.add(Dense(50, activation="relu"))
-    model.add(Dense(10, activation="relu"))
+    model.add(Dense(100))
+    model.add(PReLU())
+    model.add(Dense(50))
+    model.add(PReLU())
+    model.add(Dense(10))
+    model.add(PReLU())
     model.add(Dense(1))
     return model
 
@@ -248,9 +267,11 @@ def train_model(X_train, X_val, y_train, y_val, model_options):
     getattr(this_module, m.model)
     model = getattr(this_module, m.model)()
 
+    tensorboard = TensorBoard(log_dir=os.path.join('.', 'logs', m.get_filename(suffix="")))
+    my_callback = [tensorboard]
     model.compile(loss=m.objective,
-                  optimizer=m.optimizer,
-                  metrics=["mean_squared_error"])
+                  optimizer=m.get_optimizer(),
+                  metrics=["accuracy"])
 
     with open(model_options.get_filename(suffix=".dot"), 'w') as jfile:
         jfile.write(model_to_dot(model, show_shapes=True, show_layer_names=True).to_string())
@@ -258,12 +279,12 @@ def train_model(X_train, X_val, y_train, y_val, model_options):
         history = model.fit_generator(generate_arrays_from_file(X_train, y_train, m.batch_size, do_shuffle=True),
                                       samples_per_epoch=m.samples_per_epoch, nb_epoch=m.epoch,
                                       validation_data=generate_arrays_from_file(X_val, y_val, m.batch_size),
-                                      nb_val_samples=m.validation_samples_per_epoch)
-        print("The val_mean_squared_error is: %.3f" % history.history['val_mean_squared_error'][-1])
-        print("The loss is: %.3f" % history.history['val_loss'][-1])
+                                      nb_val_samples=m.validation_samples_per_epoch,
+                                      callbacks=my_callback)
     else:
         model.fit_generator(generate_arrays_from_file(X_train, y_train, m.batch_size, do_shuffle=True),
-                            samples_per_epoch=m.samples_per_epoch, nb_epoch=m.epoch)
+                            samples_per_epoch=m.samples_per_epoch, nb_epoch=m.epoch,
+                            callbacks=my_callback)
 
     with open(model_options.get_filename(), 'w') as jfile:
         json.dump(model.to_json(), jfile)
