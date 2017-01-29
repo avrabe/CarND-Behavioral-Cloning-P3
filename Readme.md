@@ -8,6 +8,8 @@ fit for solving the given problem._
 
 [![Distribution](distribution.png)](distribution.png)[![Distribution](distribution-filtered.png)](distribution-filtered.png)
 
+![Model](http://g.gravizo.com/source?https%3A%2F%2Fraw.githubusercontent.com%2Favrabe%2FCarND-Behavioral-Cloning-P3%2Fmaster%2Fmodel.dot)
+
 _The README provides sufficient details of the
 characteristics and qualities of the architecture,
 such as the type of model used, the number of layers,
