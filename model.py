@@ -17,6 +17,7 @@ from keras.utils.visualize_util import model_to_dot
 from pandas.tools.plotting import bootstrap_plot
 from sklearn.model_selection import train_test_split as tts
 from sklearn.utils import shuffle
+import matplotlib
 
 matplotlib.use('Agg')
 
