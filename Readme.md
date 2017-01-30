@@ -2,11 +2,7 @@
 [![Build Status](https://travis-ci.org/avrabe/CarND-Behavioral-Cloning-P3.svg?branch=master)](https://travis-ci.org/avrabe/CarND-Behavioral-Cloning-P3)
 # CarND-Behavioral-Cloning-P3
 
-<img src="drive.gif" width="200%" height="200%"/>
-
-_The README thoroughly discusses the approach
-taken for deriving and designing a model architecture
-fit for solving the given problem._
+<img src="drive.gif" width="150%" height="150%"/>
 
 
 ## The model
@@ -20,46 +16,52 @@ which in addition also contains a learning parameter.
 After flattening I've added also several Dropout layer
 to combat overcommitment.
 
-<img src="model.png" width="50%" height="50%"/>
+<img src="model.png" width="25%" height="25%"/>
 
-The default optimizer is Adam and the loss function the mean square error.
-It was chosen after testing several optimizer and loss functions.
+After testing through the optimizer and loss functions I choose as optimzer
+Adam and as loss function mean square error. I've reduced the learning rate
+after testing down to 0.0001. The samples per epoch have been set to 10000,
+the validation samples per epoch to 2000 and the batch size to 100. The values
+also have been chosen after testing different values.
 
-
-
-_The README provides sufficient details of the
-characteristics and qualities of the architecture,
-such as the type of model used, the number of layers,
-the size of each layer. Visualizations emphasizing
-particular qualities of the architecture are
-encouraged._
-
-
-_The README describes how the model was trained and
-what the characteristics of the dataset are.
-Information such as how the dataset was generated and
-examples of images from the dataset should be included._
 ## Training data
-To train the model the data set Udacity [provided](https://d17h27t6h515a5.cloudfront.net/topher/2016/December/584f6edd_data/data.zip) was mainly used.
-Additionally I've added a small set of specific training data for the
-last curve before reaching the start point again.
+To train the model the data set Udacity
+[provided](https://d17h27t6h515a5.cloudfront.net/topher/2016/December/584f6edd_data/data.zip) was used.
+No further data was chosen. I've tried to collect data using the simulator
+with keyboard, mouse and joystick. The quality of the received data however always
+led to bad models.
 
-Mainly the center images are used. In addition the left and right images
-(when available) is used. For the left and right image an additional adjustment
-is added. Afterwards the distribution looks like:
+Some examples of the data used are:
+
+|  image           | <img src="test_data/test/center_2016_12_01_13_32_55_179.jpg"/>  | <img src="test_data/test/center_2017_01_19_19_25_49_380.jpg"/> | <img src="test_data/test/center_2017_01_24_21_51_32_749"/> |
+|------------------|-----------------------------------------------------------------|----------------------------------------------------------------|------------------------------------------------------------|
+|  steering angle  |  0                                                              | -0.307052                                                      | 0.8002764                                                  |
+
+Besides the center images, also the left and right images are used.
+There is an offset added to the steering for the left and right images.
+After this process the distribution of the steering data looked like:
+
 [![Distribution](distribution.png)](distribution.png)
-To enhance the effect of the left and right steering images, the amount
-of images with a steering degree of 0 is reduced. For the training
-the distributed then looks like:
+
+Looking at this data, the was an imbalance of steering angles to the left,
+right and no steering. First the amount of left, right and no steering data was
+adjusted and afterwards the amount of no steering data was further capped.
+This was described in the NVIDIA paper and also created for me better results.
+The distribution of the steering data was afterwards changed to:
+
 [![Distribution](distribution-filtered.png)](distribution-filtered.png)
 
-The data afterwards is split into a train and validation set.
+The resulting data set was split into a train and validation set.
+A separate, very small, test set was used to get a first understanding
+if the model is worth testing.
 
-During training and validation the data was doubled by adding a flipped
-image with the inverse steering angle.
+While training the model, the amount of data was further increased by:
+- Flipping the image horizontal and inverting the steering angle
+- Adding a brightness to the image
 
 Additional enhancements like transformation of the image have not been
 applied. The basic code is added but the tests have not been successful.
+
 
 ## To train the model
 Training the model can be done using below command line.
@@ -75,3 +77,10 @@ python model.py -l /tmp/data -e 5  --samples_per_epoch 10000 --validation_sample
 ```sh
 python drive.py model.json
 ```
+
+## Conclusion
+
+With the model now up an running, it would be a good starting point to
+further evaluate the quality of other models like comma.ai or VGG16.
+One lesson I've learned is that it is very important to have a clean
+data set as otherwise the model will never reach any good point.
