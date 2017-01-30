@@ -2,7 +2,7 @@
 [![Build Status](https://travis-ci.org/avrabe/CarND-Behavioral-Cloning-P3.svg?branch=master)](https://travis-ci.org/avrabe/CarND-Behavioral-Cloning-P3)
 # CarND-Behavioral-Cloning-P3
 
-<img src="drive.gif" width="150%" height="150%"/>
+<img src="drive.gif" width="50%" height="50%"/>
 
 
 ## The model
@@ -18,11 +18,39 @@ to combat overcommitment.
 
 <img src="model.png" width="25%" height="25%"/>
 
-After testing through the optimizer and loss functions I choose as optimzer
+After testing several optimizer and loss functions I choose as optimzer
 Adam and as loss function mean square error. I've reduced the learning rate
-after testing down to 0.0001. The samples per epoch have been set to 10000,
+after testing to 0.0001. The samples per epoch have been set to 10000,
 the validation samples per epoch to 2000 and the batch size to 100. The values
 also have been chosen after testing different values.
+
+The code for the full model is:
+
+```python
+   model.add(Lambda(lambda x: x / 255 - 0.5, input_shape=(66, 200, 3)))
+    model.add(Convolution2D(24, 5, 5, border_mode='same', subsample=(2, 2)))
+    model.add(PReLU())
+    model.add(Convolution2D(36, 5, 5, border_mode='same', subsample=(2, 2)))
+    model.add(PReLU())
+    model.add(Convolution2D(48, 5, 5, border_mode='same', subsample=(2, 2)))
+    model.add(PReLU())
+    model.add(Convolution2D(64, 3, 3, border_mode='same', subsample=(2, 2)))
+    model.add(PReLU())
+    model.add(Convolution2D(64, 3, 3, border_mode='same', subsample=(2, 2)))
+    model.add(PReLU())
+    model.add(Flatten())
+    model.add(Dropout(0.8))
+    model.add(Dense(1164))
+    model.add(PReLU())
+    model.add(Dropout(0.5))
+    model.add(Dense(100))
+    model.add(PReLU())
+    model.add(Dense(50))
+    model.add(PReLU())
+    model.add(Dense(10))
+    model.add(PReLU())
+    model.add(Dense(1))
+```
 
 ## Training data
 To train the model the data set Udacity
@@ -33,9 +61,9 @@ led to bad models.
 
 Some examples of the data used are:
 
-|  image           | <img src="test_data/test/center_2016_12_01_13_32_55_179.jpg"/>  | <img src="test_data/test/center_2017_01_19_19_25_49_380.jpg"/> | <img src="test_data/test/center_2017_01_24_21_51_32_749"/> |
-|------------------|-----------------------------------------------------------------|----------------------------------------------------------------|------------------------------------------------------------|
-|  steering angle  |  0                                                              | -0.307052                                                      | 0.8002764                                                  |
+|  image           | <img src="test_data/test/center_2016_12_01_13_32_55_179.jpg"/>  | <img src="test_data/test/center_2017_01_19_19_25_49_380.jpg"/> | <img src="test_data/test/center_2017_01_24_21_51_32_749.jpg"/> |
+|------------------|-----------------------------------------------------------------|----------------------------------------------------------------|----------------------------------------------------------------|
+|  steering angle  |  0                                                              | -0.307052                                                      | 0.8002764                                                      |
 
 Besides the center images, also the left and right images are used.
 There is an offset added to the steering for the left and right images.
