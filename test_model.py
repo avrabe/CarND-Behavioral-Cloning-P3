@@ -6,6 +6,7 @@ import pytest
 import model
 from model import DrivingLogs, ModelOptions, train_model
 
+
 def test_all_driving_logs_csv():
     dl = model.DrivingLogs()
     assert len(list(dl.driving_logs)) == 3
@@ -50,9 +51,9 @@ def test_linux_image_filename_conversion():
 
         
 def test_train_model():
-    X_train, X_val, y_train, y_val = DrivingLogs("/tmp/data").train_test_split
+    X_train, X_val, y_train, y_val = DrivingLogs("/tmp/data").train_validation_split
     model_options = ModelOptions(model="nvidia", optimizer="adam", objective="mse", epoch=1,
                                  samples_per_epoch=1000, batch_size=100,
                                  validate=True, validation_samples_per_epoch=100)
-    model = train_model(X_train, X_val, y_train, y_val, model_options)
-    assert not model == None
+    m = train_model(X_train, X_val, y_train, y_val, model_options)
+    assert not m == None

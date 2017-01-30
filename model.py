@@ -170,7 +170,7 @@ class DrivingLogs:
         """
         filter_left = 'steering>0 and left != "unknown"'
         filter_right = 'steering<0 and right != "unknown"'
-        left_right_adjustment = 0.02
+        left_right_adjustment = -0.2
         left_images = self.data_frame.query(filter_left)['left']
         right_images = self.data_frame.query(filter_right)['right']
         images = self.data_frame['center'].append(left_images.append(right_images))
@@ -194,20 +194,17 @@ class Image:
     def flip(self):
         """
         Flip the image
-        :return:
         """
         self.image = cv2.flip(self.image, 1)
 
     def adjust_brightness(self):
         """
         Randomly adjust the brightness
-        :param image:
-        :return: The adjusted image
         """
         hsv = cv2.cvtColor(self.image, cv2.COLOR_RGB2HSV)  # convert it to hsv
 
         h, s, v = cv2.split(hsv)
-        v += np.clip(v + random.randint(-5, 5), 0, 255).astype('uint8')
+        v += np.clip(v + random.randint(-5, 15), 0, 255).astype('uint8')
         final_hsv = cv2.merge((h, s, v))
 
         image = cv2.cvtColor(final_hsv, cv2.COLOR_HSV2RGB)
@@ -227,8 +224,6 @@ class Image:
     def _load_image(self):
         """
         Load and resize the image
-        :param filename: The image to load
-        :return: The loaded image
         """
         img = cv2.imread(self.filename)
         img = cv2.resize(img, (200, 66))
