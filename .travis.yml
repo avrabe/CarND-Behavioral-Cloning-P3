@@ -8,7 +8,7 @@ before_install:
   - sudo apt-get update -qq
   - sudo apt-get install -qq graphviz unzip curl
   - curl -o /tmp/data.zip https://d17h27t6h515a5.cloudfront.net/topher/2016/December/584f6edd_data/data.zip
-  - unzip /tmp/data.zip -d /tmp
+  - unzip -qq /tmp/data.zip -d /tmp
 install:
   - pip install -r requirements.txt
 script:
