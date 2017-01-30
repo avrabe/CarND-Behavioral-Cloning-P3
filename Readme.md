@@ -35,8 +35,10 @@ _The README describes how the model was trained and
 what the characteristics of the dataset are.
 Information such as how the dataset was generated and
 examples of images from the dataset should be included._
-
+## Training data
 To train the model the data set Udacity [provided](https://d17h27t6h515a5.cloudfront.net/topher/2016/December/584f6edd_data/data.zip) was mainly used.
+Additionally I've added a small set of specific training data for the
+last curve before reaching the start point again.
 
 Mainly the center images are used. In addition the left and right images
 (when available) is used. For the left and right image an additional adjustment
@@ -48,3 +50,20 @@ the distributed then looks like:
 [![Distribution](distribution-filtered.png)](distribution-filtered.png)
 
 The data afterwards is split into a train and validation set.
+
+During training and validation the data was doubled by adding a flipped
+image with the inverse steering angle.
+
+Additional enhancements like transformation of the image have not been
+applied. The basic code is added but the tests have not been successful.
+
+## To train the model
+Training the model can be done using below command line.
+```sh
+python model.py -l <path_to_data> -e 20 --samples_per_epoch 10000 --validation_samples_per_epoch 2000 --batch_size 100
+```
+
+The output will look like:
+```sh
+
+```

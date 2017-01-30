@@ -1,11 +1,13 @@
 import json
 import os
+import random
 import sys
 from itertools import product
 
 import attr
 import click
 import cv2
+import matplotlib
 import numpy as np
 import pandas as pd
 from keras.callbacks import TensorBoard
@@ -17,9 +19,9 @@ from keras.utils.visualize_util import model_to_dot
 from pandas.tools.plotting import bootstrap_plot
 from sklearn.model_selection import train_test_split as tts
 from sklearn.utils import shuffle
-import matplotlib
 
 matplotlib.use('Agg')
+
 
 def _convert_image_filename(filename, path):
     """
@@ -106,6 +108,7 @@ def _search_driving_logs(self, attribute, value):
 @attr.s
 class DrivingLogs:
     """
+    A general handler which collects and holds all the driving logs.
     """
     base_path = attr.ib(default=".",
                         validator=_search_driving_logs)
@@ -126,37 +129,146 @@ class DrivingLogs:
         return pd.concat([_read_driving_log(x) for x in self.driving_logs])
 
     @property
-    def train_test_split(self):
+    def train_validation_split(self):
+        """
+        Return the train and validation set after it was enhanced and the distribution adjusted.
+        :return: X_train, X_validation, Y_train and Y_validation
+        """
+        images, steering = self._adjust_distribution()
+        return tts(images, steering)
+
+    def _adjust_distribution(self):
+        """
+        Ensure that the amount of left and right steering are equal.
+        The straight steering is only a fraction of the amount of left steering angles.
+        Take the merged images and steering angles as input.
+        :return: The adjusted images and steering angles
+        """
+        images, steering = self._merge_center_left_and_right()
+        result = pd.concat([images, steering], axis=1)
+        left = result.query('steering<0 and steering >-0.98')
+        right = result.query('steering>0 and steering <0.98')
+        center = result.query('steering==0')
+        minimum = np.min([len(left), len(center), len(right)])
+        left = result.query('steering<0').sample(n=minimum)
+        right = result.query('steering>0').sample(n=minimum)
+        center = result.query('steering==0').sample(n=minimum).sample(frac=0.75)
+        result = pd.concat([left, center, right])
+
+        data = pd.Series(result['steering'])
+        fig = bootstrap_plot(data, size=100, samples=len(result['steering']), color='grey')
+        fig.savefig('distribution-filtered.png')  # save the figure to file
+        images = result[0]
+        steering = result['steering']
+        return images, steering
+
+    def _merge_center_left_and_right(self):
+        """
+        Also use left and right images where available.
+        Add an adjustment factor to it.
+        :return: The images and steering angles list with the enriched data.
+        """
         filter_left = 'steering>0 and left != "unknown"'
         filter_right = 'steering<0 and right != "unknown"'
-        left_right_adjustment = 0.05
+        left_right_adjustment = 0.02
         left_images = self.data_frame.query(filter_left)['left']
         right_images = self.data_frame.query(filter_right)['right']
         images = self.data_frame['center'].append(left_images.append(right_images))
-        left_steering = self.data_frame.query(filter_left)['steering'] + left_right_adjustment
-        right_steering = self.data_frame.query(filter_right)['steering'] - left_right_adjustment
+        left_steering = self.data_frame.query(filter_left)['steering'] - left_right_adjustment
+        right_steering = self.data_frame.query(filter_right)['steering'] + left_right_adjustment
         steering = self.data_frame['steering'].append(left_steering.append(right_steering))
         data = pd.Series(steering)
         fig = bootstrap_plot(data, size=100, samples=len(steering), color='grey')
         fig.savefig('distribution.png')  # save the figure to file
+        return images, steering
 
-        result = pd.concat([images, steering], axis=1)
-        r1 = result.query('steering<0 or steering>0')
-        r2 = result.query('steering==0').sample(frac=0.4)  #
-        result = pd.concat([r1, r2])
-        #
-        data = pd.Series(result['steering'])
-        fig = bootstrap_plot(data, size=100, samples=len(result['steering']), color='grey')
-        fig.savefig('distribution-filtered.png')  # save the figure to file
 
-        images = result[0]
-        steering = result['steering']
-        return tts(images, steering)
+@attr.s
+class Image:
+    filename = attr.ib(default="unknown")
+    image = attr.ib(init=False, default=None)
+
+    def __attrs_post_init__(self):
+        self._load_image()
+
+    def flip(self):
+        """
+        Flip the image
+        :return:
+        """
+        self.image = cv2.flip(self.image, 1)
+
+    def adjust_brightness(self):
+        """
+        Randomly adjust the brightness
+        :param image:
+        :return: The adjusted image
+        """
+        hsv = cv2.cvtColor(self.image, cv2.COLOR_RGB2HSV)  # convert it to hsv
+
+        h, s, v = cv2.split(hsv)
+        v += np.clip(v + random.randint(-5, 5), 0, 255).astype('uint8')
+        final_hsv = cv2.merge((h, s, v))
+
+        image = cv2.cvtColor(final_hsv, cv2.COLOR_HSV2RGB)
+        self.image = image
+
+    def normalize_image(self):
+        """
+        Normalize the image
+        """
+        r, g, b = cv2.split(self.image)
+        x = r.copy()
+        r = cv2.normalize(r, x)
+        g = cv2.normalize(g, x)
+        b = cv2.normalize(b, x)
+        self.image = cv2.merge((r, g, b))
+
+    def _load_image(self):
+        """
+        Load and resize the image
+        :param filename: The image to load
+        :return: The loaded image
+        """
+        img = cv2.imread(self.filename)
+        img = cv2.resize(img, (200, 66))
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        self.image = img
+
+
+def prepare_data(filename, steering, flip, translate):
+    """
+    Load and process the image and the steering angle.
+    :param filename: The file to load
+    :param steering: The steering angle
+    :param flip: Return a flipped image and steering angle
+    :param translate: Return a translated image and steering angle
+    :return: The loaded and processed image and steering angle.
+    """
+    img = Image(filename)
+    if flip:
+        img.flip()
+        steering *= -1
+    if translate:
+        img.adjust_brightness()
+        # (rows, cols, ch) = img.shape
+        # rotation_x = random.uniform(-2 + steering, 2 + steering)
+        # M = np.float32([[1, 0, rotation_x], [0, 1, 0]])
+        # img = cv2.warpAffine(img, M, (cols, rows))
+        # steering += rotation_x * change_steering_factor
+    return img.image, steering
 
 
 def generate_arrays_from_file(x, y, batch_size, do_shuffle=False):
+    """
+    The fit_generator for train and validation data.
+    :param x: The input data
+    :param y: The result
+    :param batch_size: The size of the batches to yield
+    :param do_shuffle: True for the train fit_generator and False for the validation fit_generator.
+    :return: Yields batches of batch_size.
+    """
     batch_count = 0
-    # batch_size /= 10
     while 1:
         batch_index = 0
         if batch_index == 0:
@@ -164,18 +276,14 @@ def generate_arrays_from_file(x, y, batch_size, do_shuffle=False):
             Y = []
         if do_shuffle:
             x, y = shuffle(x, y)
-        for (filename, steering), flip in product(zip(x, y), [True, False]):
+        # translate = False
+        for (filename, steering), flip, translate in product(zip(x, y), [True, False], [True, False]):
             # create numpy arrays of input data
             # and labels, from each line in the file
-            img = cv2.imread(filename)
+            img, steering = prepare_data(filename, steering, flip, translate)
             if img is None:
                 print("Skip unreadable %s" % filename)
                 break
-            img = cv2.resize(img, (200, 66))
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            if flip:
-                img = cv2.flip(img, 1)
-                steering *= -1
             X.append(np.copy(img))
             Y.append(steering)
             # print(steering, filename, img.shape)
@@ -197,6 +305,9 @@ def generate_arrays_from_file(x, y, batch_size, do_shuffle=False):
 
 @attr.s
 class ModelOptions:
+    """
+    A container for the model options.
+    """
     model = attr.ib(default="unknown")
     optimizer = attr.ib(default="unknown")
     objective = attr.ib(default="unknown")
@@ -207,12 +318,21 @@ class ModelOptions:
     validation_samples_per_epoch = attr.ib(default=0)
 
     def get_filename(self, suffix=".json"):
+        """
+        To provide a filename which can be used for different purposes
+        :param suffix: The suffix if the filename.
+        :return: A filename as string holding most of the model parameter.
+        """
         return "%s_%s_%s_e%02d_s%06d_b%04d_v%s_vs%04d%s" % (self.model, self.optimizer,
                                                             self.objective, self.epoch, self.samples_per_epoch,
                                                             self.batch_size, self.validate,
                                                             self.validation_samples_per_epoch, suffix)
 
     def get_optimizer(self):
+        """
+        Return the selected optimizer.
+        :return: The configured optimizer
+        """
         if self.optimizer == "adam":
             return Adam(lr=0.0001)
         else:
@@ -238,7 +358,7 @@ def commaai():
     model.add(ELU())
     model.add(Convolution2D(64, 5, 5, subsample=(2, 2), border_mode="same"))
     model.add(Flatten())
-    model.add(Dropout(.2))
+    model.add(Dropout(.9))
     model.add(ELU())
     model.add(Dense(512))
     model.add(Dropout(.5))
@@ -248,13 +368,22 @@ def commaai():
 
 
 def nvidia():
+    """
+    A heavily modified model based on NVIDIA's model for BH.
+    :return: A keras model.
+    """
     model = Sequential()
     model.add(Lambda(lambda x: x / 255 - 0.5, input_shape=(66, 200, 3)))
-    model.add(Convolution2D(24, 5, 5, border_mode='same', subsample=(2, 2), activation="relu"))
-    model.add(Convolution2D(36, 5, 5, border_mode='same', subsample=(2, 2), activation="relu"))
-    model.add(Convolution2D(48, 5, 5, border_mode='same', subsample=(2, 2), activation="relu"))
-    model.add(Convolution2D(64, 3, 3, border_mode='same', subsample=(2, 2), activation="relu"))
-    model.add(Convolution2D(64, 3, 3, border_mode='same', subsample=(2, 2), activation="relu"))
+    model.add(Convolution2D(24, 5, 5, border_mode='same', subsample=(2, 2)))
+    model.add(PReLU())
+    model.add(Convolution2D(36, 5, 5, border_mode='same', subsample=(2, 2)))
+    model.add(PReLU())
+    model.add(Convolution2D(48, 5, 5, border_mode='same', subsample=(2, 2)))
+    model.add(PReLU())
+    model.add(Convolution2D(64, 3, 3, border_mode='same', subsample=(2, 2)))
+    model.add(PReLU())
+    model.add(Convolution2D(64, 3, 3, border_mode='same', subsample=(2, 2)))
+    model.add(PReLU())
     model.add(Flatten())
     model.add(Dropout(0.8))
     model.add(Dense(1164))
@@ -271,6 +400,15 @@ def nvidia():
 
 
 def train_model(X_train, X_val, y_train, y_val, model_options):
+    """
+    The training function
+    :param X_train:
+    :param X_val:
+    :param y_train:
+    :param y_val:
+    :param model_options:
+    :return: A trained model.
+    """
     m = model_options
     print("===== Train model %s =======" % (m.get_filename()))
     this_module = sys.modules[__name__]
@@ -326,7 +464,7 @@ def train_model(X_train, X_val, y_train, y_val, model_options):
               type=click.Path(exists=True))
 def cli(models, optimizers, objectives, epochs, samples_per_epoch, validation_samples_per_epoch,
         batch_size, validate, driving_logs):
-    X_train, X_val, y_train, y_val = DrivingLogs(driving_logs).train_test_split
+    X_train, X_val, y_train, y_val = DrivingLogs(driving_logs).train_validation_split
     print(len(X_train), len(X_val))
     if validation_samples_per_epoch == -1:
         validation_samples_per_epoch = len(X_val)
@@ -343,16 +481,18 @@ def cli(models, optimizers, objectives, epochs, samples_per_epoch, validation_sa
 
 
 def test_model(model):
+    """
+    To test a trained model.
+    :param model: The model to test against,
+    :return: No return value. Output is printed on stdout.
+    """
     files = ["center_2017_01_19_19_25_49_380.jpg",
-             "center_2016_12_01_13_32_47_293.jpg",
+             "center_2017_01_24_21_51_32_749.jpg",
              "center_2016_12_01_13_32_55_179.jpg"]
-    values = ["-0.307052", "0.38709", "0"]
+    values = ["-0.307052", "0.8002764", "0"]
     for f, v in zip(files, values):
-        img = cv2.imread(os.path.join("test_data", "test", f))
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        img = cv2.resize(img, (200, 66))
-
-        X = np.asarray([np.copy(img)])
+        img = Image(os.path.join("test_data", "test", f))
+        X = np.asarray([np.copy(img.image)])
         steering_angle = float(model.predict(X, batch_size=1, verbose=1))
         print(f, v, steering_angle)
 
