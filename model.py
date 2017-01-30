@@ -18,6 +18,7 @@ from pandas.tools.plotting import bootstrap_plot
 from sklearn.model_selection import train_test_split as tts
 from sklearn.utils import shuffle
 
+matplotlib.use('Agg')
 
 def _convert_image_filename(filename, path):
     """
