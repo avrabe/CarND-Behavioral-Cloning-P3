@@ -2,21 +2,25 @@
 [![Build Status](https://travis-ci.org/avrabe/CarND-Behavioral-Cloning-P3.svg?branch=master)](https://travis-ci.org/avrabe/CarND-Behavioral-Cloning-P3)
 # CarND-Behavioral-Cloning-P3
 
+<img src="drive.gif" width="200%" height="200%"/>
+
 _The README thoroughly discusses the approach
 taken for deriving and designing a model architecture
 fit for solving the given problem._
 
 
 ## The model
-I've derived my model from the NVIDIA model describe in [End to End Learning for Self-Driving Cars](https://arxiv.org/abs/1604.07316).
-The image size of the input was adjusted according to the NVIDIA model.
-In addition a normalization layer was added directly after the input layer.
-Instead of Relu I used [PReLU](https://keras.io/layers/advanced-activations/) which in
-addition also contains a learning parameter.
+I've started with the NVIDIA model describe in
+[End to End Learning for Self-Driving Cars](https://arxiv.org/abs/1604.07316).
+The image size of the input was adjusted according to the model.
+In addition a normalization layer was added as starting layer.
+After testing a while with the model I've did some changes which
+improved the model. Instead of Relu I used [PReLU](https://keras.io/layers/advanced-activations/)
+which in addition also contains a learning parameter.
 After flattening I've added also several Dropout layer
-to combat overcommitment. The overall picture can be seen below.
+to combat overcommitment.
 
-![Model](model.png)
+<img src="model.png" width="50%" height="50%"/>
 
 The default optimizer is Adam and the loss function the mean square error.
 It was chosen after testing several optimizer and loss functions.
@@ -60,10 +64,14 @@ applied. The basic code is added but the tests have not been successful.
 ## To train the model
 Training the model can be done using below command line.
 ```sh
-python model.py -l <path_to_data> -e 20 --samples_per_epoch 10000 --validation_samples_per_epoch 2000 --batch_size 100
+curl -o /tmp/data.zip https://d17h27t6h515a5.cloudfront.net/topher/2016/December/584f6edd_data/data.zip
+unzip -qq /tmp/data.zip -d /tmp
+python model.py -l /tmp/data -e 5  --samples_per_epoch 10000 --validation_samples_per_epoch 2000 --batch_size 100
 ```
 
-The output will look like:
-```sh
 
+## Testing the data
+
+```sh
+python drive.py model.json
 ```
