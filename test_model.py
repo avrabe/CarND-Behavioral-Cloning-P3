@@ -47,3 +47,12 @@ def test_linux_image_filename_conversion():
         assert "Unsupported system" == 1
     assert model._convert_image_filename("/x/y/IMG/foo.jpg", path) == result
     assert model._convert_image_filename("IMG/foo.jpg", path) == result
+
+        
+def test_train_model():
+    X_train, X_val, y_train, y_val = DrivingLogs("/tmp/data").train_test_split
+    model_options = ModelOptions(model="nvidia", optimizer="adam", objective="mse", epoch=1,
+                                 samples_per_epoch=1000, batch_size=100,
+                                 validate=True, validation_samples_per_epoch=100)
+    model = train_model(X_train, X_val, y_train, y_val, model_options)
+    assert not model == None
