@@ -4,7 +4,7 @@ import os.path
 import pytest
 
 import model
-
+from model import DrivingLogs, ModelOptions, train_model
 
 def test_all_driving_logs_csv():
     dl = model.DrivingLogs()
@@ -50,9 +50,9 @@ def test_linux_image_filename_conversion():
 
         
 def test_train_model():
-    X_train, X_val, y_train, y_val = model.DrivingLogs("/tmp/data").train_test_split
-    model_options = model.ModelOptions(model="nvidia", optimizer="adam", objective="mse", epoch=1,
-                                       samples_per_epoch=1000, batch_size=100,
-                                       validate=True, validation_samples_per_epoch=100)
-    model = model.train_model(X_train, X_val, y_train, y_val, model_options)
+    X_train, X_val, y_train, y_val = DrivingLogs("/tmp/data").train_test_split
+    model_options = ModelOptions(model="nvidia", optimizer="adam", objective="mse", epoch=1,
+                                 samples_per_epoch=1000, batch_size=100,
+                                 validate=True, validation_samples_per_epoch=100)
+    model = train_model(X_train, X_val, y_train, y_val, model_options)
     assert not model == None
