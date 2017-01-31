@@ -195,20 +195,24 @@ class Image:
         """
         Flip the image
         """
-        if self.image:
-            self.image = cv2.flip(self.image, 1)
+        try:
+            if self.image:
+                self.image = cv2.flip(self.image, 1)
+        except:
+            print("Failure on flip. Reset image.")
+            self.image = None
 
     def adjust_brightness(self):
         """
         Randomly adjust the brightness
         """
-        hsv = cv2.cvtColor(self.image, cv2.COLOR_RGB2HSV)  # convert it to hsv
-
-        h, s, v = cv2.split(hsv)
-        v += np.clip(v + random.randint(-5, 15), 0, 255).astype('uint8')
-        final_hsv = cv2.merge((h, s, v))
-
         if self.image:
+            hsv = cv2.cvtColor(self.image, cv2.COLOR_RGB2HSV)  # convert it to hsv
+
+            h, s, v = cv2.split(hsv)
+            v += np.clip(v + random.randint(-5, 15), 0, 255).astype('uint8')
+            final_hsv = cv2.merge((h, s, v))
+
             image = cv2.cvtColor(final_hsv, cv2.COLOR_HSV2RGB)
             self.image = image
 
