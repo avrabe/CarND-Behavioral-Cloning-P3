@@ -195,7 +195,8 @@ class Image:
         """
         Flip the image
         """
-        self.image = cv2.flip(self.image, 1)
+        if self.image:
+            self.image = cv2.flip(self.image, 1)
 
     def adjust_brightness(self):
         """
@@ -207,19 +208,21 @@ class Image:
         v += np.clip(v + random.randint(-5, 15), 0, 255).astype('uint8')
         final_hsv = cv2.merge((h, s, v))
 
-        image = cv2.cvtColor(final_hsv, cv2.COLOR_HSV2RGB)
-        self.image = image
+        if self.image:
+            image = cv2.cvtColor(final_hsv, cv2.COLOR_HSV2RGB)
+            self.image = image
 
     def normalize_image(self):
         """
         Normalize the image
         """
-        r, g, b = cv2.split(self.image)
-        x = r.copy()
-        r = cv2.normalize(r, x)
-        g = cv2.normalize(g, x)
-        b = cv2.normalize(b, x)
-        self.image = cv2.merge((r, g, b))
+        if self.image:
+            r, g, b = cv2.split(self.image)
+            x = r.copy()
+            r = cv2.normalize(r, x)
+            g = cv2.normalize(g, x)
+            b = cv2.normalize(b, x)
+            self.image = cv2.merge((r, g, b))
 
     def _load_image(self):
         """
