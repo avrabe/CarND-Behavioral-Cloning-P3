@@ -53,7 +53,7 @@ def test_linux_image_filename_conversion():
 def test_train_model():
     X_train, X_val, y_train, y_val = DrivingLogs("/tmp/data").train_validation_split
     model_options = ModelOptions(model="nvidia", optimizer="adam", objective="mse", epoch=1,
-                                 samples_per_epoch=1000, batch_size=100,
-                                 validate=True, validation_samples_per_epoch=100)
+                                 samples_per_epoch=10, batch_size=1,
+                                 validate=True, validation_samples_per_epoch=10)
     m = train_model(X_train, X_val, y_train, y_val, model_options)
     assert not m == None
